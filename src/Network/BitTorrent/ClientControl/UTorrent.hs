@@ -5,16 +5,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ConstraintKinds #-}
 
-module UTorrentAPI where
-  
+module Network.BitTorrent.ClientControl.UTorrent where
+ 
 import Network.HTTP.Conduit
-import System.Environment (getArgs)
-import qualified Data.ByteString.Lazy as L
 import Control.Monad.IO.Class (liftIO)
 import Network.URL
 import Data.Maybe
+import Data.Text as DT
 import Text.HTML.TagSoup
-import Data.ByteString.Lazy.Char8 as DBSLC
+import Data.ByteString.Lazy.Char8 as BSLC
 import Prelude as P
 import Data.ByteString.Char8 as DBC
 import Data.Aeson
@@ -23,53 +22,34 @@ import Data.Text as DT
 import Data.Vector as DV (toList, (!))
 import Foreign.Marshal.Utils as FMU
 import Control.Monad
-import Control.Exception.Lifted as CEL
-import Control.Monad.Instances
-import Control.Monad.Error as CME
-import Control.Monad.Error.Class
-import Data.String
 import Control.Exception
-import Control.Monad.Trans.Control
 import Data.ByteString as DB
 import Network.HTTP.Client.MultipartFormData
 
 import System.Log.Logger
 import System.Log.Handler.Syslog
 import System.Log.Handler.Simple
-import Network
-import Network.Connection
-import Network.Socket.Internal
-import TorrentClient
-import Data.Text as DT
-import System.FilePath.Posix
 import Data.Word
 
--- internal module
-import Utils
+import Network.BitTorrent.ClientControl
+
 
 actionParam = "action"
 hashParam = "hash"
 
-logger = "fuin.utorrentapi"
-
-
-
-{--TODO: this whole module is messed up - requests should be build up in different functions from 
- performing IO building requests is a pure thing -}
+logger = "utorrentapi"
 
 data UTorrentConn = UTorrentConn { baseURL :: URL, user :: String, pass :: String, cookies :: CookieJar}
   deriving Show
 
 
-makeUTorrentConn :: MakeTorrentClientConn
 makeUTorrentConn hostName portNum (user, pass) = do
-  liftIO $ debugM UTorrentAPI.logger $ "attempting connection to " ++ (show $ utServerURL  hostName portNum)
+  liftIO $ debugM logger $ "attempting connection to " ++ (show $ utServerURL  hostName portNum)
   conn <- uTorentConn (utServerURL hostName portNum) user pass
   return $ TorrentClientConn {addMagnetLink = addUrl conn, listTorrents = list conn,
                               pauseTorrent = pause conn, setSettings = setSett conn,
-                              connectPeer = addPeer conn,
+                              connectToPeer = addPeer conn,
                               addTorrentFile = addFile conn}
-
 
 -- refactor this crap based on the previous pattern
 uTorentConn baseUrl user pass = do
@@ -77,10 +57,8 @@ uTorentConn baseUrl user pass = do
   let conn = UTorrentConn url user pass (createCookieJar [])
   res <- makeRequest  conn (\url -> url {url_path = "gui/token.html"}) return
   liftIO $ debugM logger $ ("RESPONSE from utserver is " ++) $  (show res)
-  return $ UTorrentConn (add_param url ("token", getToken (DBSLC.unpack $ responseBody res)))
+  return $ UTorrentConn (add_param url ("token", getToken (BSLC.unpack $ responseBody res)))
                         user pass (responseCookieJar res)
-
-
 
 --makeRequest :: (MonadTorrentClient m) => UTorrentConn -> m (Response L.ByteString)
 makeRequest conn urlChange reqChange = do
@@ -88,18 +66,20 @@ makeRequest conn urlChange reqChange = do
   completeReq <- reqChange $ (applyBasicAuth (DBC.pack $ user conn)
             (DBC.pack $ pass conn) (request { cookieJar = Just $ cookies conn }))
   liftIO $ debugM logger (show completeReq)
+  withManager $ \manager -> httpLbs completeReq manager
+ 
+{-
   potentialResult <- CEL.try (withManager $ \manager -> httpLbs completeReq manager)
   case potentialResult of
     Left (e :: SomeException) -> CME.throwError $ show e 
     Right r -> return r
+-}
 
 
 requestWithParams conn params reqChange = fmap responseBody $ makeRequest conn
                   (\url -> P.foldl (\u p -> add_param u p) url params) reqChange
 
- 
-
- -- TODO: use lens here?
+-- TODO: use lens here?
 -- TODO: correctly implement this
 list conn
   = fmap ((P.map (\(Array a) ->
@@ -134,7 +114,7 @@ boolSetting b = show $ (fromBool $ b :: Int)
 
 fromAesonStr (String s) = s
 
-setSett conn settings =if' (settings == []) (return ()) $ do
+setSett conn settings =if (settings == []) then (return ()) else do
   requestWithParams conn (P.reverse $ (actionParam, "setsetting") :
         (join $ P.map ((\(s, v) -> [("s", s), ("v", v)]) . settingToParam) settings)) return
   return ()
@@ -142,7 +122,7 @@ setSett conn settings =if' (settings == []) (return ()) $ do
 getToken :: String -> String 
 getToken = (\(TagText t) -> t) . (!! 2) . parseTags 
 
-utServerURL :: HostName -> Word16 -> String
+utServerURL :: String -> Word16 -> String
 utServerURL hostName p = "http://" P.++ hostName P.++ ":" P.++ (show p)
 
 {-
@@ -168,7 +148,7 @@ archMagnet = "magnet:?xt=urn:btih:67f4bcecdca3e046c4dc759c9e5bfb2c48d277b0&dn=ar
 
 runWithErrorHandling = do
   liftIO $ updateGlobalLogger logger (setLevel DEBUG)
-  results <- runErrorT runTorrentClientScript
+  results <- runTorrentClientScript
   P.putStrLn $ show results
   return ()
 

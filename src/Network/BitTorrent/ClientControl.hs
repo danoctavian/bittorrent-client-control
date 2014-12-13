@@ -18,7 +18,6 @@ data Torrent = Torrent {torrentID :: InfoHash, torrentName :: String}
 
 type PortNum = Word16
 
-type MakeTorrentClientConn = HostName -> Word16 -> Credentials -> InitTorrentClientConn
 
 data TorrentClientConn =  TorrentClientConn {
   addMagnetLink :: String -> IO InfoHash,
@@ -31,8 +30,6 @@ data TorrentClientConn =  TorrentClientConn {
   connectToPeer :: InfoHash -> String -> PortNum -> IO ()
 }
 
-data Credentials = Credentials {user :: String, password :: String}
-
 data Setting = ProxySetType ProxyType | ProxyIP String | ProxyP2P Bool | ProxyPort PortNum 
                | DHTNetwork Bool | UTP Bool | PeerExchange Bool | LocalPeerDiscovery Bool
                | DHTForNewTorrents Bool | UPnP Bool | NATPMP Bool | RandomizePort Bool
@@ -40,5 +37,4 @@ data Setting = ProxySetType ProxyType | ProxyIP String | ProxyP2P Bool | ProxyPo
   deriving (Show, Eq)
 
 data ProxyType = None | Socks4 | Socks5 | HTTPS | HTTP deriving (Enum, Show, Eq)
-
 
