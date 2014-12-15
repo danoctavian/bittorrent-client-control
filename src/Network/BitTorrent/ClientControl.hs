@@ -20,14 +20,16 @@ type PortNum = Word16
 
 
 data TorrentClientConn =  TorrentClientConn {
-  addMagnetLink :: String -> IO InfoHash,
-  addTorrentFile :: FilePath -> IO InfoHash,
+
+  -- basic functionality
+  addMagnetLink :: String -> IO (),
+  addTorrentFile :: FilePath -> IO (),
   listTorrents :: IO [Torrent],
   pauseTorrent :: InfoHash -> IO (),
   setSettings :: [Setting] -> IO (),
 
   -- optional functionality
-  connectToPeer :: InfoHash -> String -> PortNum -> IO ()
+  connectToPeer :: Maybe (InfoHash -> String -> PortNum -> IO ())
 }
 
 data Setting = ProxySetType ProxyType | ProxyIP String | ProxyP2P Bool | ProxyPort PortNum 

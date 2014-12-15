@@ -1,23 +1,28 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Network.BitTorrent.ClientControl.UTorrent where
  
 import Network.HTTP.Conduit
-import Control.Monad.IO.Class (liftIO)
 import Network.URL
 import Data.Maybe
 import Data.Text as DT
+import Data.Text.Encoding
 import Text.HTML.TagSoup
 import Data.ByteString.Lazy.Char8 as BSLC
+import Data.ByteString.Lazy as BSL
+import Data.ByteString.Char8 as BSC
 import Prelude as P
-import Data.ByteString.Char8 as DBC
-import Data.Aeson
+import Data.ByteString.Char8 as BSC
+import Data.Aeson as JSON
 import Data.HashMap.Strict
 import Data.Text as DT
 import Data.Vector as DV (toList, (!))
 import Foreign.Marshal.Utils as FMU
 import Control.Monad
 import Control.Exception
-import Data.ByteString as DB
+import Data.ByteString as BS
 import Network.HTTP.Client.MultipartFormData
+import Data.Binary as Bin
 
 import System.Log.Logger
 import System.Log.Handler.Syslog
@@ -32,62 +37,65 @@ hashParam = "hash"
 
 logger = "utorrentapi"
 
-data UTorrentConn = UTorrentConn { baseURL :: URL, user :: String, pass :: String, cookies :: CookieJar}
+data UTorrentConn = UTorrentConn {
+                    baseURL :: URL
+                  , user :: String
+                  , pass :: String
+                  , cookies :: CookieJar}
   deriving Show
 
 
 makeUTorrentConn hostName portNum (user, pass) = do
-  liftIO $ debugM logger $ "attempting connection to " ++ (show $ utServerURL  hostName portNum)
+  debugM logger $ "attempting connection to " ++ (show $ utServerURL  hostName portNum)
   conn <- uTorentConn (utServerURL hostName portNum) user pass
   return $ TorrentClientConn {addMagnetLink = addUrl conn, listTorrents = list conn,
-                              pauseTorrent = pause conn, setSettings = setSett conn,
-                              connectToPeer = addPeer conn,
+                              pauseTorrent = pause conn, setSettings = settings conn,
+                              connectToPeer = Nothing,
                               addTorrentFile = addFile conn}
 
--- refactor this crap based on the previous pattern
 uTorentConn baseUrl user pass = do
   let url = (fromJust . importURL $ baseUrl) {url_path = "gui/"}
   let conn = UTorrentConn url user pass (createCookieJar [])
   res <- makeRequest  conn (\url -> url {url_path = "gui/token.html"}) return
-  liftIO $ debugM logger $ ("RESPONSE from utserver is " ++) $  (show res)
+  debugM logger $ ("response  from utserver is " ++) $  (show res)
   return $ UTorrentConn (add_param url ("token", getToken (BSLC.unpack $ responseBody res)))
                         user pass (responseCookieJar res)
 
---makeRequest :: (MonadTorrentClient m) => UTorrentConn -> m (Response L.ByteString)
 makeRequest conn urlChange reqChange = do
-  request <-liftIO $ parseUrl $ exportURL $ urlChange $ baseURL conn
-  completeReq <- reqChange $ (applyBasicAuth (DBC.pack $ user conn)
-            (DBC.pack $ pass conn) (request { cookieJar = Just $ cookies conn }))
-  liftIO $ debugM logger (show completeReq)
+  request <-parseUrl $ exportURL $ urlChange $ baseURL conn
+  completeReq <- reqChange $ (applyBasicAuth (BSC.pack $ user conn)
+            (BSC.pack $ pass conn) (request { cookieJar = Just $ cookies conn }))
+  debugM logger (show completeReq)
   withManager $ \manager -> httpLbs completeReq manager
  
-{-
-  potentialResult <- CEL.try (withManager $ \manager -> httpLbs completeReq manager)
-  case potentialResult of
-    Left (e :: SomeException) -> CME.throwError $ show e 
-    Right r -> return r
--}
-
 
 requestWithParams conn params reqChange = fmap responseBody $ makeRequest conn
                   (\url -> P.foldl (\u p -> add_param u p) url params) reqChange
 
--- TODO: use lens here?
--- TODO: correctly implement this
+-- implementation for operations
+addUrl conn url = requestWithParams conn [("s", url), (actionParam, "add-url")] return
+                  >> return () 
+
+pause conn hash
+  = requestWithParams conn [(hashParam, show hash), (actionParam, "pause")] return
+    >> return ()
+
+addFile conn filePath = requestWithParams conn [(actionParam, "add-file")]
+                        (formDataBody [partFile "torrent_file" filePath])
+                        >> return ()
+
 list conn
   = fmap ((P.map (\(Array a) ->
-      Torrent (DT.unpack $ fromAesonStr $ a DV.! 0) (DT.unpack $ fromAesonStr $ a DV.! 2)) )
+      Torrent (Bin.decode $ toLazy $ encodeUtf8 $ fromAesonStr $ a DV.! 0)
+              (DT.unpack $ fromAesonStr $ a DV.! 2)) )
       . (\(Array a) -> DV.toList a) . fromJust . (Data.HashMap.Strict.lookup "torrents")
-      . fromJust . (\s -> decode s :: Maybe Object))
+      . fromJust . (\s -> JSON.decode s :: Maybe Object))
       $ requestWithParams conn [("list", "1")] return
 
-pause conn hash = requestWithParams conn [(hashParam, hash), (actionParam, "pause")] return >> return ()
-addUrl conn url = requestWithParams conn [("s", url), (actionParam, "add-url")] return  >> return url
-addPeer conn hash host port = undefined -- the utorrent server currently doesn't support this
-addFile conn filePath = requestWithParams conn [(actionParam, "add-file")]
-                        (formDataBody[partFile "torrent_file" filePath])
-                        >>= (return . show)
-
+settings conn settings =if (settings == []) then (return ()) else do
+  requestWithParams conn (P.reverse $ (actionParam, "setsetting") :
+       (join $ P.map ((\(s, v) -> [("s", s), ("v", v)]) . settingToParam) settings)) return
+  return ()
 
 settingToParam (ProxySetType proxyType) = ("proxy.type", show . fromEnum $ proxyType)
 settingToParam (ProxyIP ip) =  ("proxy.proxy", ip)
@@ -103,47 +111,35 @@ settingToParam (NATPMP b) = ("natpmp", boolSetting b)
 settingToParam (RandomizePort b) = ("rand_port_on_start", boolSetting b)
 settingToParam (BindPort n) = ("bind_port", show n)
 
-boolSetting b = show $ (fromBool $ b :: Int) 
-
-fromAesonStr (String s) = s
-
-setSett conn settings =if (settings == []) then (return ()) else do
-  requestWithParams conn (P.reverse $ (actionParam, "setsetting") :
-        (join $ P.map ((\(s, v) -> [("s", s), ("v", v)]) . settingToParam) settings)) return
-  return ()
-
-getToken :: String -> String 
-getToken = (\(TagText t) -> t) . (!! 2) . parseTags 
 
 utServerURL :: String -> Word16 -> String
 utServerURL hostName p = "http://" P.++ hostName P.++ ":" P.++ (show p)
 
-{-
-DEBUGGING code used for manual testing
-TODO: remove when done
-"http://127.0.0.1:8000"
--}
+dummyHash :: InfoHash
+dummyHash = Bin.decode $ BSLC.replicate 20 '0'
+
+-- utils
+getToken :: String -> String 
+getToken = (\(TagText t) -> t) . (!! 2) . parseTags 
+
+boolSetting b = show $ (fromBool $ b :: Int) 
+fromAesonStr (String s) = s
+toLazy bs = BSL.fromChunks [bs]
+
 runTorrentClientScript = do
-  conn <- makeUTorrentConn "127.0.0.1" 8000  ("admin", "")
-  liftIO $ debugM logger "made first connection"
+  updateGlobalLogger logger (setLevel DEBUG)
+  conn <- makeUTorrentConn "127.0.0.1" 9000  ("admin", "")
+  debugM logger "made first connection"
   r3 <- setSettings conn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1080, ProxyP2P True]
-  liftIO $ debugM logger $ show $  r3
+  debugM logger $ show $  r3
   torrentFile <-return "/home/dan/testdata/sample100.torrent"
---  r2 <- addMagnetLink conn archMagnet
-  r2 <- addTorrentFile conn torrentFile 
-  liftIO $ debugM logger $ "addUrl RESPONSE IS " ++  (show r2)
+  addMagnetLink conn archMagnet
+  addTorrentFile conn torrentFile 
   r <- listTorrents conn
-  liftIO $ debugM logger $ "list is  " ++  (show r)
---  liftIO $ debugM logger $ show r
+  debugM logger $ "list of torrents  is  " ++  (show r)
   return ()
 
 archMagnet = "magnet:?xt=urn:btih:67f4bcecdca3e046c4dc759c9e5bfb2c48d277b0&dn=archlinux-2014.03.01-dual.iso&tr=udp://tracker.archlinux.org:6969&tr=http://tracker.archlinux.org:6969/announce"
-
-runWithErrorHandling = do
-  liftIO $ updateGlobalLogger logger (setLevel DEBUG)
-  results <- runTorrentClientScript
-  P.putStrLn $ show results
-  return ()
 
 {-
   HTTP calls notes:
