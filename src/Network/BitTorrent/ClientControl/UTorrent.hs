@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Network.BitTorrent.ClientControl.UTorrent where
+module Network.BitTorrent.ClientControl.UTorrent (
+    makeUTorrentConn 
+  )where
  
 import Network.HTTP.Conduit
 import Network.URL
@@ -125,37 +127,3 @@ getToken = (\(TagText t) -> t) . (!! 2) . parseTags
 boolSetting b = show $ (fromBool $ b :: Int) 
 fromAesonStr (String s) = s
 toLazy bs = BSL.fromChunks [bs]
-
-runTorrentClientScript = do
-  updateGlobalLogger logger (setLevel DEBUG)
-  conn <- makeUTorrentConn "127.0.0.1" 9000  ("admin", "")
-  debugM logger "made first connection"
-  r3 <- setSettings conn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1080, ProxyP2P True]
-  debugM logger $ show $  r3
-  torrentFile <-return "/home/dan/testdata/sample100.torrent"
-  addMagnetLink conn archMagnet
-  addTorrentFile conn torrentFile 
-  r <- listTorrents conn
-  debugM logger $ "list of torrents  is  " ++  (show r)
-  return ()
-
-archMagnet = "magnet:?xt=urn:btih:67f4bcecdca3e046c4dc759c9e5bfb2c48d277b0&dn=archlinux-2014.03.01-dual.iso&tr=udp://tracker.archlinux.org:6969&tr=http://tracker.archlinux.org:6969/announce"
-
-{-
-  HTTP calls notes:
-
-set settings calls
-
-set proxy to socks5
-http://localhost:8080/gui/?token=6pvMv-pFjjA6IcGkotXcW8hMfNwu5hPeBMLksFaQo_ACDFD8_N4yiHf0JFM=&action=setsetting&s=proxy.type&v=2
-
-set port
-http://localhost:8080/gui/?token=6pvMv-pFjjA6IcGkotXcW8hMfNwu5hPeBMLksFaQo_ACDFD8_N4yiHf0JFM=&action=setsetting&s=proxy.port&v=9998
-
-
-set address
-http://localhost:8080/gui/?token=6pvMv-pFjjA6IcGkotXcW8hMfNwu5hPeBMLksFaQo_ACDFD8_N4yiHf0JFM=&action=setsetting&s=proxy.proxy&v=127.0.1.1
-
-set p2p proxy 
-http://localhost:8080/gui/?token=6pvMv-pFjjA6IcGkotXcW8hMfNwu5hPeBMLksFaQo_ACDFD8_N4yiHf0JFM=&action=setsetting&s=proxy.p2p&v=0
--}
