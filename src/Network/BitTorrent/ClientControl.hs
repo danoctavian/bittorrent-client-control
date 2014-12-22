@@ -1,7 +1,4 @@
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Network.BitTorrent.ClientControl where
 
@@ -11,6 +8,8 @@ module Network.BitTorrent.ClientControl where
 
 import Data.Word
 import Data.LargeWord
+import Control.Exception
+import Data.Typeable
 
 type InfoHash = Word160
 data Torrent = Torrent {torrentID :: InfoHash, torrentName :: String}
@@ -19,11 +18,17 @@ data Torrent = Torrent {torrentID :: InfoHash, torrentName :: String}
 type PortNum = Word16
 
 
+data TorrentClientException = ClientException | ServerException
+  deriving (Show, Typeable)
+
+instance Exception TorrentClientException 
+
 data TorrentClientConn =  TorrentClientConn {
 
   -- basic functionality
   addMagnetLink :: String -> IO (),
   addTorrentFile :: FilePath -> IO (),
+  removeTorrent :: InfoHash -> IO (),
   listTorrents :: IO [Torrent],
   pauseTorrent :: InfoHash -> IO (),
   setSettings :: [Setting] -> IO (),
