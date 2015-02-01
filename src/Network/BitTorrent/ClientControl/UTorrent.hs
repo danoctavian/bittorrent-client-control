@@ -32,6 +32,7 @@ import System.Log.Handler.Simple
 import Data.Word
 
 import Network.BitTorrent.ClientControl
+import Network.BitTorrent.Types
 
 
 actionParam = "action"
@@ -50,10 +51,16 @@ data UTorrentConn = UTorrentConn {
 makeUTorrentConn hostName portNum (user, pass) = do
   debugM logger $ "attempting connection to " ++ (show $ utServerURL  hostName portNum)
   conn <- uTorentConn (utServerURL hostName portNum) user pass
-  return $ TorrentClientConn {addMagnetLink = addUrl conn, listTorrents = list conn,
-                              pauseTorrent = pause conn, setSettings = settings conn,
-                              connectToPeer = Nothing,
-                              addTorrentFile = addFile conn}
+  return $ TorrentClientConn { addMagnetLink = addUrl conn
+                             , listTorrents = list conn
+                             , pauseTorrent = pause conn
+                             , setSettings = settings conn
+                             , connectToPeer = Nothing
+                             , addTorrentFile = addFile conn
+                             , removeTorrent = rmTorrent conn
+                             , removeTorrentWithData = rmTorrentWithData conn
+                             , setJobProperties = setJobProps conn
+                           }
 
 uTorentConn baseUrl user pass = do
   let url = (fromJust . importURL $ baseUrl) {url_path = "gui/"}
@@ -79,7 +86,7 @@ addUrl conn url = requestWithParams conn [("s", url), (actionParam, "add-url")] 
                   >> return () 
 
 pause conn hash
-  = requestWithParams conn [(hashParam, show hash), (actionParam, "pause")] return
+  = requestWithParams conn [(hashParam, infoHashToString hash), (actionParam, "pause")] return
     >> return ()
 
 addFile conn filePath = requestWithParams conn [(actionParam, "add-file")]
@@ -88,16 +95,27 @@ addFile conn filePath = requestWithParams conn [(actionParam, "add-file")]
 
 list conn
   = fmap ((P.map (\(Array a) ->
-      Torrent (Bin.decode $ toLazy $ encodeUtf8 $ fromAesonStr $ a DV.! 0)
+      Torrent (Bin.decode $ toLazy $ fromJust $ textToInfoHash $ fromAesonStr $ a DV.! 0)
               (DT.unpack $ fromAesonStr $ a DV.! 2)) )
       . (\(Array a) -> DV.toList a) . fromJust . (Data.HashMap.Strict.lookup "torrents")
       . fromJust . (\s -> JSON.decode s :: Maybe Object))
       $ requestWithParams conn [("list", "1")] return
 
-settings conn settings =if (settings == []) then (return ()) else do
-  requestWithParams conn (P.reverse $ (actionParam, "setsetting") :
-       (join $ P.map ((\(s, v) -> [("s", s), ("v", v)]) . settingToParam) settings)) return
-  return ()
+settings conn settings = setProps conn "setsetting" [] settings settingToParam
+
+rmTorrent conn infoHash = requestWithParams conn
+                        [(actionParam, "removetorrent")
+                        , (hashParam, infoHashToString infoHash)] return 
+                        >> return ()
+
+rmTorrentWithData conn infoHash = requestWithParams conn
+                        [(actionParam, "removedatatorrent")
+                        , (hashParam, infoHashToString infoHash)]
+                         return 
+                        >> return ()
+
+setJobProps conn infoHash props
+  = setProps conn "setprops" [(hashParam, infoHashToString infoHash)] props jobPropToParam 
 
 settingToParam (ProxySetType proxyType) = ("proxy.type", show . fromEnum $ proxyType)
 settingToParam (ProxyIP ip) =  ("proxy.proxy", ip)
@@ -113,6 +131,14 @@ settingToParam (NATPMP b) = ("natpmp", boolSetting b)
 settingToParam (RandomizePort b) = ("rand_port_on_start", boolSetting b)
 settingToParam (BindPort n) = ("bind_port", show n)
 
+setProps conn action others props propToParam = if (props == [])  then (return ()) else do
+  requestWithParams conn (P.reverse $ ((actionParam, action) : others) P.++
+       (join $ P.map ((\(s, v) -> [("s", s), ("v", v)]) . propToParam) props)) return
+  return ()
+
+
+jobPropToParam (DownloadRate r) = ("dlrate", show r)
+jobPropToParam (UploadRate r) = ("ulrate", show r)
 
 utServerURL :: String -> Word16 -> String
 utServerURL hostName p = "http://" P.++ hostName P.++ ":" P.++ (show p)
@@ -127,3 +153,7 @@ getToken = (\(TagText t) -> t) . (!! 2) . parseTags
 boolSetting b = show $ (fromBool $ b :: Int) 
 fromAesonStr (String s) = s
 toLazy bs = BSL.fromChunks [bs]
+
+
+-- a string representation of the infohash
+--infoHashToString = 

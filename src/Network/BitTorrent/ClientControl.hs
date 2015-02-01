@@ -7,15 +7,14 @@ module Network.BitTorrent.ClientControl where
 -}
 
 import Data.Word
-import Data.LargeWord
 import Control.Exception
 import Data.Typeable
 
-type InfoHash = Word160
+import Network.BitTorrent.Types
+
 data Torrent = Torrent {torrentID :: InfoHash, torrentName :: String}
   deriving Show
 
-type PortNum = Word16
 
 
 data TorrentClientException = ClientException | ServerException
@@ -29,10 +28,11 @@ data TorrentClientConn =  TorrentClientConn {
   addMagnetLink :: String -> IO (),
   addTorrentFile :: FilePath -> IO (),
   removeTorrent :: InfoHash -> IO (),
+  removeTorrentWithData :: InfoHash -> IO (),
   listTorrents :: IO [Torrent],
   pauseTorrent :: InfoHash -> IO (),
   setSettings :: [Setting] -> IO (),
-
+  setJobProperties :: InfoHash -> [JobProperty] -> IO (),
   -- optional functionality
   connectToPeer :: Maybe (InfoHash -> String -> PortNum -> IO ())
 }
@@ -44,4 +44,9 @@ data Setting = ProxySetType ProxyType | ProxyIP String | ProxyP2P Bool | ProxyPo
   deriving (Show, Eq)
 
 data ProxyType = None | Socks4 | Socks5 | HTTPS | HTTP deriving (Enum, Show, Eq)
+
+data JobProperty = DownloadRate Int | UploadRate Int -- bytes per second
+  deriving (Show, Eq)
+                
+
 
