@@ -38,7 +38,13 @@ data TorrentClientConn =  TorrentClientConn {
 }
 
 data Setting = ProxySetType ProxyType | ProxyIP String | ProxyP2P Bool | ProxyPort PortNum 
-               | DHTNetwork Bool | UTP Bool | PeerExchange Bool | LocalPeerDiscovery Bool
+               | DHTNetwork Bool
+               | TransportDisposition { outgoingTCP :: Bool
+                                      , outgoingUTP :: Bool 
+                                      , incomingTCP :: Bool
+                                      , incomingUTP :: Bool
+                                    }
+               | PeerExchange Bool | LocalPeerDiscovery Bool
                | DHTForNewTorrents Bool | UPnP Bool | NATPMP Bool | RandomizePort Bool
                | BindPort Word16
   deriving (Show, Eq)

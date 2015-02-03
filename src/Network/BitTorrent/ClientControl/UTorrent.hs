@@ -25,6 +25,7 @@ import Control.Exception
 import Data.ByteString as BS
 import Network.HTTP.Client.MultipartFormData
 import Data.Binary as Bin
+import Data.List
 
 import System.Log.Logger
 import System.Log.Handler.Syslog
@@ -122,7 +123,10 @@ settingToParam (ProxyIP ip) =  ("proxy.proxy", ip)
 settingToParam (ProxyP2P isP2P) = ("proxy.p2p", boolSetting isP2P)
 settingToParam (ProxyPort n) = ("proxy.port", show n) 
 settingToParam (DHTNetwork b) = ("dht", boolSetting b) 
-settingToParam (UTP b) = ("bt.transp_disposition", boolSetting b) 
+settingToParam (TransportDisposition outTCP outUTP inTCP inUTP)
+  = ("bt.transp_disposition"
+    , show $ (P.sum $ P.map (\(i,b) -> 2 ^ i * (fromBool b :: Int))
+                     $ P.zip [0..]  [outTCP, outUTP, inTCP, inUTP])) 
 settingToParam (PeerExchange b) = ("pex", boolSetting b) 
 settingToParam (LocalPeerDiscovery b) = ("lsd", boolSetting b) 
 settingToParam (DHTForNewTorrents b) = ("dht_per_torrent", boolSetting b) 
@@ -130,6 +134,7 @@ settingToParam (UPnP b) = ("upnp", boolSetting b)
 settingToParam (NATPMP b) = ("natpmp", boolSetting b) 
 settingToParam (RandomizePort b) = ("rand_port_on_start", boolSetting b)
 settingToParam (BindPort n) = ("bind_port", show n)
+
 
 setProps conn action others props propToParam = if (props == [])  then (return ()) else do
   requestWithParams conn (P.reverse $ ((actionParam, action) : others) P.++
@@ -154,6 +159,3 @@ boolSetting b = show $ (fromBool $ b :: Int)
 fromAesonStr (String s) = s
 toLazy bs = BSL.fromChunks [bs]
 
-
--- a string representation of the infohash
---infoHashToString = 
