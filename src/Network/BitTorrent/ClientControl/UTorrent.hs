@@ -54,6 +54,9 @@ makeUTorrentConn hostName portNum (user, pass) = do
   conn <- uTorentConn (utServerURL hostName portNum) user pass
   return $ TorrentClientConn { addMagnetLink = addUrl conn
                              , listTorrents = list conn
+                             , startTorrent = start conn
+                             , forceStartTorrent = forceStart conn
+                             , stopTorrent = start conn
                              , pauseTorrent = pause conn
                              , unpauseTorrent = unpause conn
                              , setSettings = settings conn
@@ -83,19 +86,24 @@ makeRequest conn urlChange reqChange = do
 requestWithParams conn params reqChange = fmap responseBody $ makeRequest conn
                   (\url -> P.foldl (\u p -> add_param u p) url params) reqChange
 
--- implementation for operations
+-- ACTION IMPLEMENTATIONS
+
 addUrl conn url = requestWithParams conn [("s", url), (actionParam, "add-url")] return
                   >> return () 
 
-pause conn hash
-  = requestWithParams conn [(hashParam, infoHashToString hash), (actionParam, "pause")] return
-    >> return ()
+-- action on a certain infohash
+hashAction action conn hash = requestWithParams conn
+                              [ (actionParam, action)
+                              , (hashParam, infoHashToString hash)] return
+                              >> return ()
 
-unpause conn hash
-  = requestWithParams conn [(hashParam, infoHashToString hash), (actionParam, "unpause")] return
-    >> return ()
-
-
+pause = hashAction "pause"
+unpause = hashAction "unpause"
+start =  hashAction "start"
+forceStart =  hashAction "forcestart"
+stop =  hashAction "stop"
+rmTorrent = hashAction "removetorrent"
+rmTorrentWithData = hashAction "removedatatorrent"
 
 addFile conn filePath = requestWithParams conn [(actionParam, "add-file")]
                         (formDataBody [partFile "torrent_file" filePath])
@@ -110,17 +118,6 @@ list conn
       $ requestWithParams conn [("list", "1")] return
 
 settings conn settings = setProps conn "setsetting" [] settings settingToParam
-
-rmTorrent conn infoHash = requestWithParams conn
-                        [(actionParam, "removetorrent")
-                        , (hashParam, infoHashToString infoHash)] return 
-                        >> return ()
-
-rmTorrentWithData conn infoHash = requestWithParams conn
-                        [(actionParam, "removedatatorrent")
-                        , (hashParam, infoHashToString infoHash)]
-                         return 
-                        >> return ()
 
 setJobProps conn infoHash props
   = setProps conn "setprops" [(hashParam, infoHashToString infoHash)] props jobPropToParam 
