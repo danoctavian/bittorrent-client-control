@@ -130,7 +130,7 @@ settingToParam (TransportDisposition outTCP outUTP inTCP inUTP)
 settingToParam (PeerExchange b) = ("pex", boolSetting b) 
 settingToParam (LocalPeerDiscovery b) = ("lsd", boolSetting b) 
 settingToParam (LimitLocalPeerBandwidth b) = ("rate_limit_local_peers", boolSetting b) 
-
+settingToParam (UploadSlotsPerTorrent n) = ("ul_slots_per_torrent", show n) 
 settingToParam (DHTForNewTorrents b) = ("dht_per_torrent", boolSetting b) 
 settingToParam (UPnP b) = ("upnp", boolSetting b) 
 settingToParam (NATPMP b) = ("natpmp", boolSetting b) 
