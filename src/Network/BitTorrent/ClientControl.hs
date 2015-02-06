@@ -31,6 +31,7 @@ data TorrentClientConn =  TorrentClientConn {
   removeTorrentWithData :: InfoHash -> IO (),
   listTorrents :: IO [Torrent],
   pauseTorrent :: InfoHash -> IO (),
+  unpauseTorrent :: InfoHash -> IO (),
   setSettings :: [Setting] -> IO (),
   setJobProperties :: InfoHash -> [JobProperty] -> IO (),
   -- optional functionality

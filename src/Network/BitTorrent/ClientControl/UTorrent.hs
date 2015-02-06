@@ -55,6 +55,7 @@ makeUTorrentConn hostName portNum (user, pass) = do
   return $ TorrentClientConn { addMagnetLink = addUrl conn
                              , listTorrents = list conn
                              , pauseTorrent = pause conn
+                             , unpauseTorrent = unpause conn
                              , setSettings = settings conn
                              , connectToPeer = Nothing
                              , addTorrentFile = addFile conn
@@ -89,6 +90,12 @@ addUrl conn url = requestWithParams conn [("s", url), (actionParam, "add-url")] 
 pause conn hash
   = requestWithParams conn [(hashParam, infoHashToString hash), (actionParam, "pause")] return
     >> return ()
+
+unpause conn hash
+  = requestWithParams conn [(hashParam, infoHashToString hash), (actionParam, "unpause")] return
+    >> return ()
+
+
 
 addFile conn filePath = requestWithParams conn [(actionParam, "add-file")]
                         (formDataBody [partFile "torrent_file" filePath])
