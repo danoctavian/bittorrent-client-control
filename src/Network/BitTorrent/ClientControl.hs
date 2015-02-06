@@ -44,7 +44,9 @@ data Setting = ProxySetType ProxyType | ProxyIP String | ProxyP2P Bool | ProxyPo
                                       , incomingTCP :: Bool
                                       , incomingUTP :: Bool
                                     }
+
                | PeerExchange Bool | LocalPeerDiscovery Bool
+               | LimitLocalPeerBandwidth Bool -- limits the bandwith for local peers as well
                | DHTForNewTorrents Bool | UPnP Bool | NATPMP Bool | RandomizePort Bool
                | BindPort Word16
   deriving (Show, Eq)
