@@ -26,6 +26,7 @@ import Data.ByteString as BS
 import Network.HTTP.Client.MultipartFormData
 import Data.Binary as Bin
 import Data.List
+import Data.Scientific
 
 import System.Log.Logger
 import System.Log.Handler.Syslog
@@ -56,7 +57,7 @@ makeUTorrentConn hostName portNum (user, pass) = do
                              , listTorrents = list conn
                              , startTorrent = start conn
                              , forceStartTorrent = forceStart conn
-                             , stopTorrent = start conn
+                             , stopTorrent = stop conn
                              , pauseTorrent = pause conn
                              , unpauseTorrent = unpause conn
                              , setSettings = settings conn
@@ -110,12 +111,23 @@ addFile conn filePath = requestWithParams conn [(actionParam, "add-file")]
                         >> return ()
 
 list conn
-  = fmap ((P.map (\(Array a) ->
-      Torrent (Bin.decode $ toLazy $ fromJust $ textToInfoHash $ fromAesonStr $ a DV.! 0)
-              (DT.unpack $ fromAesonStr $ a DV.! 2)) )
+  = fmap ((P.map (\(Array a) -> torrentFromArray a))
       . (\(Array a) -> DV.toList a) . fromJust . (Data.HashMap.Strict.lookup "torrents")
       . fromJust . (\s -> JSON.decode s :: Maybe Object))
       $ requestWithParams conn [("list", "1")] return
+
+
+torrentFromArray a = Torrent {
+    torrentID = Bin.decode $ toLazy $ fromJust $ textToInfoHash $ fromAesonStr $ a DV.! 0
+  , torrentName = DT.unpack $ fromAesonStr $ a DV.! 2
+  , progress =  numToInt $ a DV.! 4
+  , upSpeed = numToInt $ a DV.! 8
+  , downSpeed = numToInt $ a DV.! 9
+  , peersConnected = numToInt $ a DV.! 12
+  , seedsConnected = numToInt $ a DV.! 14
+}
+
+numToInt = fromJust . toBoundedInteger . fromAesonNum 
 
 settings conn settings = setProps conn "setsetting" [] settings settingToParam
 
@@ -163,5 +175,6 @@ getToken = (\(TagText t) -> t) . (!! 2) . parseTags
 
 boolSetting b = show $ (fromBool $ b :: Int) 
 fromAesonStr (String s) = s
+fromAesonNum (Number n) = n
 toLazy bs = BSL.fromChunks [bs]
 

@@ -12,9 +12,24 @@ import Data.Typeable
 
 import Network.BitTorrent.Types
 
-data Torrent = Torrent {torrentID :: InfoHash, torrentName :: String}
+data Torrent = Torrent {
+                   torrentID :: InfoHash
+                 , torrentName :: String
+                 , progress :: Int -- fraction is progress / 1000
+                 , upSpeed :: Int -- bytes/s
+                 , downSpeed :: Int -- bytes/s
+                 , peersConnected :: Int
+                 , seedsConnected :: Int 
+               }
   deriving Show
 
+
+{-
+TODO: add support later
+data JobStatus = Started | Checking | StartAfterCheck | Checked | Error | Paused | Queued
+               | Loaded
+  deriving (Show, Eq)
+-}
 
 
 data TorrentClientException = ClientException | ServerException
